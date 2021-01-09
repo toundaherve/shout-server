@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	validation "github.com/go-ozzo/ozzo-validation"
 	"github.com/go-ozzo/ozzo-validation/is"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx"
 )
 
 // Form contains the
@@ -29,36 +32,78 @@ func (f Form) validate() error {
 	)
 }
 
-// UserRegistrationHandler handles the creation of a new user
-func UserRegistrationHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
+// NewUserRegistrationHandler creates a new Registration Handler
+func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
 
-	var form Form
+		var form Form
 
-	dec := json.NewDecoder(r.Body)
-	err := dec.Decode(&form)
-	if err != nil {
-		resp := APIResponse{
-			Code:    http.StatusBadRequest,
-			Type:    "unknown",
-			Message: "Please check the data.",
+		dec := json.NewDecoder(r.Body)
+		err := dec.Decode(&form)
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "unknown",
+				Message: "Please check the data.",
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
 		}
 
-		w.WriteHeader(http.StatusBadRequest)
-		enc.Encode(resp)
-		return
-	}
+		err = form.validate()
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "unknown",
+				Message: err,
+			}
 
-	err = form.validate()
-	if err != nil {
-		resp := APIResponse{
-			Code:    http.StatusBadRequest,
-			Type:    "unknown",
-			Message: err,
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
 		}
 
-		w.WriteHeader(http.StatusBadRequest)
+		var takenEmail string
+		err = conn.QueryRow(context.Background(), "SELECT email FROM users WHERE email=$1", form.Email).Scan(&takenEmail)
+		if err == nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "unknown",
+				Message: "Email already taken.",
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
+		}
+
+		id := uuid.New().String()
+
+		_, err = conn.Exec(context.Background(), "INSERT INTO users(id, username, first_name, last_name, email, password, location) VALUES($1, $2, $3, $4, $5, $6, $7)",
+			id, form.Username, form.FirstName, form.LastName, form.Email, form.Password, form.Location)
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusInternalServerError,
+				Type:    "unknown",
+				Message: "Sorry, we cannot perform this operation now.",
+			}
+
+			w.WriteHeader(http.StatusInternalServerError)
+			enc.Encode(resp)
+			return
+		}
+
+		resp := APIResponse{
+			Code:    http.StatusCreated,
+			Type:    "unknown",
+			Message: "Registration successful",
+		}
+
+		w.WriteHeader(http.StatusCreated)
 		enc.Encode(resp)
 		return
 	}
