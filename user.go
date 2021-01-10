@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	validation "github.com/go-ozzo/ozzo-validation"
 	"github.com/go-ozzo/ozzo-validation/is"
@@ -21,8 +22,8 @@ type Form struct {
 	Location  string `json:"location"`
 }
 
-func (f Form) validate() error {
-	return validation.ValidateStruct(&f,
+func (f *Form) validate() error {
+	return validation.ValidateStruct(f,
 		validation.Field(&f.Username, validation.Required),
 		validation.Field(&f.FirstName, validation.Required),
 		validation.Field(&f.LastName, validation.Required),
@@ -32,13 +33,23 @@ func (f Form) validate() error {
 	)
 }
 
+func (f *Form) format() {
+	f.Username = strings.ToLower(strings.TrimSpace(f.Username))
+	f.FirstName = strings.ToLower(strings.TrimSpace(f.FirstName))
+	f.LastName = strings.ToLower(strings.TrimSpace(f.LastName))
+	f.Email = strings.ToLower(strings.TrimSpace(f.Email))
+	f.Password = strings.ToLower(strings.TrimSpace(f.Password))
+	f.Location = strings.ToLower(strings.TrimSpace(f.Location))
+
+}
+
 // NewUserRegistrationHandler creates a new Registration Handler
 func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
 
-		var form Form
+		var form *Form
 
 		dec := json.NewDecoder(r.Body)
 		err := dec.Decode(&form)
@@ -54,12 +65,14 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 			return
 		}
 
+		form.format()
+
 		err = form.validate()
 		if err != nil {
 			resp := APIResponse{
 				Code:    http.StatusBadRequest,
 				Type:    "unknown",
-				Message: err,
+				Message: err.Error(),
 			}
 
 			w.WriteHeader(http.StatusBadRequest)
