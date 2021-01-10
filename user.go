@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx"
 )
 
-// Form contains the
+// Form contains the user data
 type Form struct {
 	Username  string `json:"username"`
 	FirstName string `json:"firstName"`
@@ -28,7 +28,7 @@ func (f *Form) validate() error {
 		validation.Field(&f.FirstName, validation.Required),
 		validation.Field(&f.LastName, validation.Required),
 		validation.Field(&f.Email, validation.Required, is.Email),
-		validation.Field(&f.Password, validation.Required),
+		validation.Field(&f.Password, validation.Required, validation.Length(6, 20)),
 		validation.Field(&f.Location, validation.Required),
 	)
 }
@@ -59,7 +59,6 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 				Type:    "unknown",
 				Message: "Please check the data.",
 			}
-
 			w.WriteHeader(http.StatusBadRequest)
 			enc.Encode(resp)
 			return
@@ -74,7 +73,6 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 				Type:    "unknown",
 				Message: err.Error(),
 			}
-
 			w.WriteHeader(http.StatusBadRequest)
 			enc.Encode(resp)
 			return
@@ -88,14 +86,12 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 				Type:    "unknown",
 				Message: "Email already taken.",
 			}
-
 			w.WriteHeader(http.StatusBadRequest)
 			enc.Encode(resp)
 			return
 		}
 
 		id := uuid.New().String()
-
 		_, err = conn.Exec(context.Background(), "INSERT INTO users(id, username, first_name, last_name, email, password, location) VALUES($1, $2, $3, $4, $5, $6, $7)",
 			id, form.Username, form.FirstName, form.LastName, form.Email, form.Password, form.Location)
 		if err != nil {
@@ -104,7 +100,6 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 				Type:    "unknown",
 				Message: "Sorry, we cannot perform this operation now.",
 			}
-
 			w.WriteHeader(http.StatusInternalServerError)
 			enc.Encode(resp)
 			return
@@ -115,7 +110,6 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 			Type:    "unknown",
 			Message: "Registration successful",
 		}
-
 		w.WriteHeader(http.StatusCreated)
 		enc.Encode(resp)
 		return
