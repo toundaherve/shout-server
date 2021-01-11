@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx"
+	"github.com/rs/cors"
 )
 
 // APIResponse is the response to the request
@@ -46,8 +47,11 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/", HomeHandler)
 	r.HandleFunc("/user", NewUserRegistrationHandler(conn)).Methods("POST")
-	http.Handle("/", r)
+	r.HandleFunc("/user/login", NewUserLoginHandler(conn)).Methods("POST")
 
+	handler := cors.Default().Handler(r)
+
+	http.Handle("/", handler)
 	err = http.ListenAndServe(":3000", nil)
 	if err != nil {
 		fmt.Println(err)

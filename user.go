@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -56,7 +57,7 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 		if err != nil {
 			resp := APIResponse{
 				Code:    http.StatusBadRequest,
-				Type:    "unknown",
+				Type:    "error",
 				Message: "Please check the data.",
 			}
 			w.WriteHeader(http.StatusBadRequest)
@@ -70,7 +71,7 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 		if err != nil {
 			resp := APIResponse{
 				Code:    http.StatusBadRequest,
-				Type:    "unknown",
+				Type:    "error",
 				Message: err.Error(),
 			}
 			w.WriteHeader(http.StatusBadRequest)
@@ -83,7 +84,7 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 		if err == nil {
 			resp := APIResponse{
 				Code:    http.StatusBadRequest,
-				Type:    "unknown",
+				Type:    "error",
 				Message: "Email already taken.",
 			}
 			w.WriteHeader(http.StatusBadRequest)
@@ -97,7 +98,7 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 		if err != nil {
 			resp := APIResponse{
 				Code:    http.StatusInternalServerError,
-				Type:    "unknown",
+				Type:    "error",
 				Message: "Sorry, we cannot perform this operation now.",
 			}
 			w.WriteHeader(http.StatusInternalServerError)
@@ -107,7 +108,7 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 
 		resp := APIResponse{
 			Code:    http.StatusCreated,
-			Type:    "unknown",
+			Type:    "",
 			Message: "Registration successful",
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -115,4 +116,105 @@ func NewUserRegistrationHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.
 		return
 	}
 
+}
+
+// LoginForm represents the User credentials
+type LoginForm struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (f *LoginForm) validate() error {
+	return validation.ValidateStruct(f,
+		validation.Field(&f.Email, validation.Required, is.Email),
+		validation.Field(&f.Password, validation.Required),
+	)
+}
+
+func (f *LoginForm) format() {
+	f.Email = strings.ToLower(strings.TrimSpace(f.Email))
+	f.Password = strings.ToLower(strings.TrimSpace(f.Password))
+}
+
+// NewUserLoginHandler creates a new Login Handler
+func NewUserLoginHandler(conn *pgx.Conn) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
+
+		var form *LoginForm
+
+		dec := json.NewDecoder(r.Body)
+		err := dec.Decode(&form)
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "error",
+				Message: "Please check the data.",
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
+		}
+
+		form.format()
+
+		err = form.validate()
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "error",
+				Message: err.Error(),
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
+		}
+
+		var takenEmail string
+		err = conn.QueryRow(context.Background(), "SELECT email FROM users WHERE email=$1", form.Email).Scan(&takenEmail)
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "error",
+				Message: "Invalid email or password",
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
+		}
+
+		var password string
+		err = conn.QueryRow(context.Background(), "SELECT password FROM users WHERE email=$1", form.Email).Scan(&password)
+		if err != nil {
+			resp := APIResponse{
+				Code:    http.StatusInternalServerError,
+				Type:    "error",
+				Message: "Internal server error",
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			enc.Encode(resp)
+			fmt.Println(err)
+			return
+		}
+
+		if form.Password != password {
+			resp := APIResponse{
+				Code:    http.StatusBadRequest,
+				Type:    "error",
+				Message: "Invalid email or password",
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			enc.Encode(resp)
+			return
+		}
+
+		resp := APIResponse{
+			Code:    http.StatusOK,
+			Type:    "",
+			Message: "Success Login",
+		}
+		w.WriteHeader(http.StatusOK)
+		enc.Encode(resp)
+	}
 }
